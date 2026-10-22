@@ -1,5 +1,5 @@
 // Guarda la app para que abra sin internet. Cambia VERSION al publicar cambios.
-const VERSION = 'redia-v3';
+const VERSION = 'redia-v4';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -13,7 +13,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   e.respondWith(
-    fetch(req).then(res => {
+    fetch(req, req.mode === 'navigate' ? { cache: 'no-cache' } : undefined).then(res => {
       if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(r => r || caches.match('index.html')))

@@ -1170,6 +1170,7 @@ function backupSheet() {
     <p>${mode === 'cloud' ? 'Tus datos se guardan en tu cuenta de Claude.' : 'Tus datos se guardan en este dispositivo.'} Descarga un respaldo de vez en cuando, o para pasar tus datos a otro dispositivo o a la app instalada.</p>
     <div class="btns"><button class="btn pri" data-a="bkSave">Descargar respaldo</button><button class="btn" data-a="bkLoad">Restaurar desde archivo</button></div>
     <p class="small">Al restaurar, lo que hay ahora se reemplaza por el contenido del respaldo.</p>
+    <p class="small muted">Versión de la app: 4</p>
     <div class="foot"><span></span><button class="btn" data-a="close">Cerrar</button></div>`);
 }
 async function bkSave() {
@@ -1391,7 +1392,12 @@ function render() {
 }
 render(); setStatus();
 connect();
-if (!inClaude && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!inClaude && 'serviceWorker' in navigator && location.protocol === 'https:') {
+  // Cuando llega una versión nueva de la app, recarga una vez para usarla
+  const hadSW = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
+}
 })();
 </script>
 
