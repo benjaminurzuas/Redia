@@ -303,6 +303,30 @@ textarea.in{resize:vertical;min-height:70px}
 .swatches input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
 
 
+
+/* ramos y notas */
+.courses{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.courses > li{border-top:1px solid var(--line)}
+.courses > li:first-child{border-top:0}
+.course-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;padding:12px 0;text-align:left;min-width:0}
+.course-row .grow{display:flex;flex-direction:column;flex:1;min-width:0}
+.course-row .meta{font-size:12.5px;color:var(--muted)}
+.chev{width:18px;height:18px;color:var(--muted);flex:0 0 auto;transition:transform .2s}
+.open .chev{transform:rotate(180deg)}
+.course-body{display:flex;flex-direction:column;gap:12px;padding:0 0 16px 21px}
+.grade{display:inline-grid;place-items:center;min-width:44px;padding:3px 8px;border-radius:8px;font-family:var(--f-display);font-weight:600;font-size:16px;font-variant-numeric:tabular-nums}
+.grade.ok{background:var(--good-soft);color:var(--good)}
+.grade.low{background:var(--bad-soft);color:var(--bad)}
+.grade.none{color:var(--muted)}
+.gtable{width:100%;border-collapse:collapse;font-size:14px}
+.gtable th{font-size:12px;color:var(--muted);font-weight:500;text-align:left;padding:4px 6px 6px 0}
+.gtable td{padding:6px 6px 6px 0;border-top:1px solid var(--line);vertical-align:middle}
+.gtable td .meta{display:block;font-size:12px;color:var(--muted)}
+.gtable tfoot td{font-weight:600;border-top:1.5px solid var(--ink-2)}
+.gtable td:last-child{width:32px}
+.grade-form{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
+@media (max-width:560px){.grade-form{grid-template-columns:1fr 1fr}.grade-form .grow{grid-column:1/-1}.grade-form .btn{grid-column:1/-1}.course-body{padding-left:0}}
+
 /* finanzas: gastos */
 .subnav{display:flex;justify-content:center}
 .subnav .seg button{padding:8px 18px;font-size:14px}
@@ -429,7 +453,7 @@ const I = {
 
 /* ---------- datos ---------- */
 const DEFAULTS = {
-  uni:  { courses: [], items: [], goals: {}, semesterStart: '', _t: 0 },
+  uni:  { courses: [], items: [], goals: {}, semesterStart: '', passGrade: 4, _t: 0 },
   cal:  { events: [], source: '', importedAt: '', _t: 0 },
   gym:  { weights: [], goalKg: '', attendance: {}, daysGoal: 4, exercises: [], logs: [], _t: 0 },
   vida: { goals: [], focus: {}, _t: 0 },
@@ -599,6 +623,30 @@ function itemHTML(it, showDate) {
     </button>
   </li>`;
 }
+/* Notas: escala chilena 1,0–7,0. Ponderado si todas las notas tienen %, si no promedio simple. */
+const g1 = v => (Math.round(v * 10) / 10).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const passG = () => +S.uni.passGrade || 4;
+function courseGrades(c) {
+  const gs = c.grades || [], pass = passG();
+  if (!gs.length) return { gs, avg: null };
+  const weighted = gs.every(g => +g.weight > 0);
+  if (!weighted) return { gs, avg: sum(gs.map(g => +g.grade)) / gs.length, weighted };
+  const W = sum(gs.map(g => +g.weight)), avgNow = sum(gs.map(g => g.grade * g.weight)) / W;
+  const R = 100 - W;
+  let need = null;
+  if (R > 0.0001 && W < 100) need = (pass * 100 - sum(gs.map(g => g.grade * g.weight))) / R;
+  return { gs, avg: avgNow, weighted, W, R, need, final: W >= 99.95 };
+}
+function gradeChip(v) { return v == null ? '' : `<span class="grade ${v >= passG() ? 'ok' : 'low'}">${g1(v)}</span>`; }
+function needText(r) {
+  const pass = g1(passG());
+  if (!r.gs.length) return 'Sin notas todavía';
+  if (!r.weighted) return `Promedio simple de ${r.gs.length} nota${r.gs.length === 1 ? '' : 's'}. Agrega el % de cada una para saber cuánto necesitas.`;
+  if (r.final) return r.avg >= passG() ? `Nota final. Aprobado con ${g1(r.avg)}.` : `Nota final ${g1(r.avg)}, bajo el ${pass}.`;
+  if (r.need <= 1) return `Ya tienes el ${pass} asegurado. Falta un ${num(r.R, 0)}% del ramo.`;
+  if (r.need > 7) return `Ni con 7,0 en el ${num(r.R, 0)}% que queda llegas al ${pass}.`;
+  return `Necesitas un <b>${g1(r.need)}</b> promedio en el ${num(r.R, 0)}% que queda para aprobar con ${pass}.`;
+}
 function renderUni() {
   const u = S.uni, mon = curMon(), wk = iso(mon), days = [...Array(7)].map((_, i) => iso(addDays(mon, i))), end = days[6], t = today();
   const wItems = u.items.filter(i => i.date >= wk && i.date <= end);
@@ -618,7 +666,8 @@ function renderUni() {
     <div class="stat"><div class="eyebrow">Pendientes semana</div><div class="v">${pend}</div><div class="d">${wItems.length - pend} hechas de ${wItems.length}</div></div>
     <div class="stat"><div class="eyebrow">Evaluaciones 14 días</div><div class="v">${evals14}</div><div class="d">${upcoming[0] ? `Próxima ${inDays(diffDays(t, upcoming[0].date))}` : 'Nada agendado'}</div></div>
     <div class="stat"><div class="eyebrow">Metas de la semana</div><div class="v">${goals.filter(g => g.done).length}/${goals.length}</div><div class="d">${goals.length ? Math.round(goals.filter(g => g.done).length / goals.length * 100) + '% cumplido' : 'Sin metas aún'}</div></div>
-    <div class="stat"><div class="eyebrow">Atrasadas</div><div class="v" style="color:${overdue.length ? 'var(--bad)' : 'inherit'}">${overdue.length}</div><div class="d">${overdue.length ? 'Revisa la lista abajo' : 'Vas al día'}</div></div>
+    ${(() => { const avgs = u.courses.map(c => courseGrades(c).avg).filter(v => v != null), gen = avgs.length ? sum(avgs) / avgs.length : null;
+      return `<div class="stat"><div class="eyebrow">Promedio general</div><div class="v" style="color:${gen != null && gen < passG() ? 'var(--bad)' : 'inherit'}">${gen != null ? g1(gen) : '—'}</div><div class="d">${gen != null ? `De ${avgs.length} ramo${avgs.length === 1 ? '' : 's'} con notas` : 'Agrega notas en tus ramos'}</div></div>`; })()}
   </div>`;
 
   html += `<div class="card"><div class="card-h"><div><h2>Semana</h2><div class="sub">${events.length ? `Incluye ${events.length} eventos importados de tu calendario` : 'Toca un día para agregar algo'}</div></div>
@@ -643,10 +692,22 @@ function renderUni() {
         return `<li><span class="dot" style="${cVar(c)}"></span><div class="grow"><button class="link" style="color:var(--ink);text-align:left" data-a="editItem" data-id="${i.id}">${esc(i.title)}</button><div class="meta">${c ? esc(c.name) + ' · ' : ''}${fmtD(i.date)}${i.time ? ' · ' + i.time : ''}</div></div><span class="chip ${EVAL.has(i.type) ? 'eval' : 'ent'}">${TYPES[i.type]}</span><div class="count">${n}<small>${n === 1 ? 'día' : 'días'}</small></div></li>`; }).join('')}</ul>` : `<p class="empty-s">Cuando agregues pruebas, controles o entregas, aparecen aquí con cuenta regresiva.</p>`}
     </div>
     ${overdue.length ? `<div class="card span-12"><div class="card-h"><h2>Atrasadas</h2><span class="sub">Márcalas o cámbiales la fecha</span></div><ul class="list">${overdue.slice(0, 10).map(x => itemHTML(x, true)).join('')}</ul></div>` : ''}
-    <div class="card span-12"><div class="card-h"><div><h2>Ramos</h2><div class="sub">${u.semesterStart ? `Semestre desde el ${fmtD(u.semesterStart)}` : 'Define el inicio del semestre para numerar las semanas'}</div></div>
+    <div class="card span-12"><div class="card-h"><div><h2>Ramos y notas</h2><div class="sub">${u.semesterStart ? `Semestre desde el ${fmtD(u.semesterStart)}` : 'Define el inicio del semestre para numerar las semanas'} · aprueba con ${g1(passG())}</div></div>
       <div class="btns"><button class="btn" data-a="semSettings">${I.gear} Semestre</button><button class="btn pri" data-a="addCourse">${I.plus} Ramo</button></div></div>
-      ${u.courses.length ? `<ul class="rows">${u.courses.map(c => { const its = u.items.filter(i => i.courseId === c.id), p = its.filter(i => !i.done).length, nx = its.filter(i => !i.done && i.date >= t && EVAL.has(i.type)).sort((a, b) => a.date.localeCompare(b.date))[0];
-        return `<li><span class="dot" style="${cVar(c)}"></span><div class="grow"><b>${esc(c.name)}</b><div class="meta">${p} pendiente${p === 1 ? '' : 's'}${nx ? ` · próxima ${TYPES[nx.type].toLowerCase()} ${fmtD(nx.date)}` : ''}</div></div><button class="btn ghost" data-a="editCourse" data-id="${c.id}">Editar</button></li>`; }).join('')}</ul>` : `<p class="empty-s">Sin ramos todavía.</p>`}
+      ${u.courses.length ? `<ul class="courses">${u.courses.map(c => { const its = u.items.filter(i => i.courseId === c.id), p = its.filter(i => !i.done).length, nx = its.filter(i => !i.done && i.date >= t && EVAL.has(i.type)).sort((a, b) => a.date.localeCompare(b.date))[0];
+        const r = courseGrades(c), open = ui.courseOpen === c.id;
+        return `<li class="${open ? 'open' : ''}"><button class="course-row" data-a="courseOpen" data-id="${c.id}" aria-expanded="${open}"><span class="dot" style="${cVar(c)}"></span><span class="grow"><b>${esc(c.name)}</b><span class="meta">${r.gs.length} nota${r.gs.length === 1 ? '' : 's'} · ${p} pendiente${p === 1 ? '' : 's'}${nx ? ` · ${TYPES[nx.type].toLowerCase()} ${fmtShort(nx.date)}` : ''}</span></span>${r.avg != null ? gradeChip(r.avg) : '<span class="grade none">—</span>'}<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+          ${open ? `<div class="course-body">
+            <p class="small" style="margin:0">${needText(r)}</p>
+            ${r.gs.length ? `<table class="gtable"><thead><tr><th>Evaluación</th><th>%</th><th>Nota</th><th></th></tr></thead><tbody>${r.gs.map(g => `<tr><td>${esc(g.name)}${g.date ? `<span class="meta">${fmtShort(g.date)}</span>` : ''}</td><td class="num">${+g.weight > 0 ? num(g.weight, 1) + '%' : '—'}</td><td>${gradeChip(+g.grade)}</td><td><button class="x" data-a="delGrade" data-c="${c.id}" data-id="${g.id}" aria-label="Borrar nota">${I.x}</button></td></tr>`).join('')}</tbody>${r.weighted ? `<tfoot><tr><td>Llevas</td><td class="num">${num(r.W, 1)}%</td><td>${gradeChip(r.avg)}</td><td></td></tr></tfoot>` : ''}</table>` : ''}
+            <form class="grade-form" data-f="grade" data-c="${c.id}">
+              <div class="field grow"><label for="gn-${c.id}">Evaluación</label><input class="in" id="gn-${c.id}" maxlength="60" placeholder="Ej.: Prueba 1" required></div>
+              <div class="field"><label for="gw-${c.id}">% del ramo</label><input class="in num" id="gw-${c.id}" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="25"></div>
+              <div class="field"><label for="gg-${c.id}">Nota</label><input class="in num" id="gg-${c.id}" type="number" min="1" max="7" step="0.1" inputmode="decimal" placeholder="5,5" required></div>
+              <button class="btn pri">Agregar</button>
+            </form>
+            <div class="btns"><button class="btn ghost" data-a="editCourse" data-id="${c.id}">Editar ramo</button></div>
+          </div>` : ''}</li>`; }).join('')}</ul>` : `<p class="empty-s">Sin ramos todavía.</p>`}
     </div></div>`;
   $('#p-uni').innerHTML = html;
 }
@@ -1123,6 +1184,9 @@ async function bkLoad(file) {
 function loadSample() {
   const mon = mondayOf(new Date()), d = n => iso(addDays(mon, n)), ex = { ex: true };
   const cs = ['Cálculo II', 'Programación', 'Física I', 'Economía'].map((name, i) => ({ id: uid(), name, color: i, ...ex }));
+  cs[0].grades = [{ id: uid(), name: 'Control 1', grade: 5.2, weight: 15, date: d(-30) }, { id: uid(), name: 'Prueba 1', grade: 4.6, weight: 30, date: d(-14) }];
+  cs[1].grades = [{ id: uid(), name: 'Tarea 1', grade: 6.5, weight: 10, date: d(-25) }, { id: uid(), name: 'Lab 1', grade: 6.1, weight: 15, date: d(-18) }, { id: uid(), name: 'Prueba 1', grade: 5.8, weight: 25, date: d(-10) }];
+  cs[2].grades = [{ id: uid(), name: 'Control 1', grade: 3.4, weight: 20, date: d(-20) }];
   S.uni.courses.push(...cs);
   const it = (title, type, c, day, time = '', done = false) => ({ id: uid(), title, type, courseId: cs[c].id, date: d(day), time, done, notes: '', ...ex });
   S.uni.items.push(it('Guía 4 de integrales', 'tarea', 0, 0, '', true), it('Control 2', 'control', 2, 1, '10:00'), it('Lab 3: listas enlazadas', 'entrega', 1, 2, '23:59'), it('Leer cap. 5 Mankiw', 'lectura', 3, 3), it('Ejercicios de cinemática', 'tarea', 2, 4), it('Prueba 1', 'prueba', 0, 9, '08:30'), it('Tarea 2 de oferta y demanda', 'tarea', 3, 11), it('Prueba 2', 'prueba', 1, 15, '14:00'));
@@ -1208,7 +1272,9 @@ const A = {
   toggleWGoal: d => { const g = (S.uni.goals[wkKey()] || []).find(x => x.id === d.id); g.done = !g.done; save('uni'); render(); },
   delWGoal: d => { S.uni.goals[wkKey()] = (S.uni.goals[wkKey()] || []).filter(x => x.id !== d.id); save('uni'); render(); },
   carryGoals: () => { const k = wkKey(), prev = S.uni.goals[iso(addDays(curMon(), -7))] || []; S.uni.goals[k] = [...(S.uni.goals[k] || []), ...prev.filter(g => !g.done).map(g => ({ ...g, id: uid() }))]; save('uni'); render(); },
-  semSettings: () => openForm({ title: 'Semestre', fields: [{ k: 'semesterStart', label: 'Fecha de inicio de clases', type: 'date', v: S.uni.semesterStart }], submit: 'Guardar', onSubmit: v => { S.uni.semesterStart = v.semesterStart; save('uni'); } }),
+  semSettings: () => openForm({ title: 'Semestre', fields: [{ k: 'semesterStart', label: 'Fecha de inicio de clases', type: 'date', v: S.uni.semesterStart }, { k: 'passGrade', label: 'Nota mínima para aprobar (escala 1,0 a 7,0)', type: 'number', v: passG(), step: '0.1' }], submit: 'Guardar', onSubmit: v => { S.uni.semesterStart = v.semesterStart; S.uni.passGrade = Math.min(7, Math.max(1, +String(v.passGrade).replace(',', '.') || 4)); save('uni'); } }),
+  courseOpen: d => { ui.courseOpen = ui.courseOpen === d.id ? '' : d.id; render(); },
+  delGrade: d => { const c = course(d.c); c.grades = (c.grades || []).filter(g => g.id !== d.id); save('uni'); render(); },
   calSheet: () => calSheet(),
   calRange: d => calSheet(d.r),
   icsSave: d => icsSave(d.r),
@@ -1258,6 +1324,15 @@ const A = {
   }
 };
 const F = {
+  grade: f => {
+    const c = course(f.dataset.c), id = c.id;
+    const grade = parseFloat($('#gg-' + id).value.replace(',', '.')), w = parseFloat(($('#gw-' + id).value || '').replace(',', '.'));
+    if (!(grade >= 1 && grade <= 7)) { toast('La nota tiene que estar entre 1,0 y 7,0'); return; }
+    const used = sum((c.grades || []).map(g => +g.weight || 0));
+    if (w > 0 && used + w > 100.01) { toast(`Te pasas del 100%: ya llevas ${num(used, 1)}%`); return; }
+    (c.grades = c.grades || []).push({ id: uid(), name: $('#gn-' + id).value.trim(), grade: Math.round(grade * 10) / 10, weight: w > 0 ? w : '', date: today() });
+    save('uni'); render(); $('#gn-' + id)?.focus(); toast(`Nota ${g1(grade)} guardada`);
+  },
   wgoal: f => { const inp = $('#wgoal-in'), v = inp.value.trim(); if (!v) return; const k = wkKey(); (S.uni.goals[k] = S.uni.goals[k] || []).push({ id: uid(), text: v, done: false }); save('uni'); render(); $('#wgoal-in').focus(); },
   weight: () => { const kg = parseFloat($('#w-kg').value), date = $('#w-date').value; if (!kg || !date) return; S.gym.weights = S.gym.weights.filter(w => w.date !== date); S.gym.weights.push({ id: uid(), date, kg }); save('gym'); render(); toast('Peso guardado'); },
   step: f => { const g = findGoal(f.dataset.g), inp = $('#step-' + g.id), v = inp.value.trim(); if (!v) return; g.steps.push({ id: uid(), text: v, done: false }); save('vida'); render(); $('#step-' + g.id)?.focus(); },
