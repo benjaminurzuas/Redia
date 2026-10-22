@@ -1,5 +1,5 @@
 // Guarda la app para que abra sin internet. Cambia VERSION al publicar cambios.
-const VERSION = 'redia-v2';
+const VERSION = 'redia-v3';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
